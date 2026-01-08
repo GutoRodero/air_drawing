@@ -1,14 +1,18 @@
 import cv2
+import time
 from src.hand_tracker import HandTracker
 from src.drawing_canvas import DrawingCanvas
-from src.utils import is_pinch
+from src.utils import finger_touching_thumb
 
 cap = cv2.VideoCapture(0)
 tracker = HandTracker()
 
 ret, frame = cap.read()
 h, w, _ = frame.shape
-canvas = DrawingCanvas(w, h)
+canvas = DrawingCanvas(w, h, cube_size=20)
+
+gesture_start_time = None
+active_mode = None  # "draw" | "erase"
 
 while True:
     ret, frame = cap.read()
@@ -17,22 +21,45 @@ while True:
     landmarks = tracker.find_hand_landmarks(frame)
 
     if landmarks:
-        index_tip = landmarks[8]
-        thumb_tip = landmarks[4]
+        thumb = landmarks[4]
+        index_finger = landmarks[8]
+        middle_finger = landmarks[12]
 
-        if is_pinch(index_tip, thumb_tip):
-            canvas.draw(index_tip)
-            cv2.circle(frame, index_tip, 8, (0, 255, 0), -1)
+        if finger_touching_thumb(thumb, index_finger):
+            if active_mode != "draw":
+                gesture_start_time = time.time()
+                active_mode = "draw"
+
+            if time.time() - gesture_start_time >= 1.0:
+                canvas.draw_cube(index_finger)
+                cv2.circle(frame, index_finger, 6, (0, 255, 0), -1)
+
+        elif finger_touching_thumb(thumb, middle_finger):
+            if active_mode != "erase":
+                gesture_start_time = time.time()
+                active_mode = "erase"
+
+            if time.time() - gesture_start_time >= 1.0:
+                canvas.erase_cube(middle_finger)
+                cv2.circle(frame, middle_finger, 6, (0, 0, 255), -1)
+
         else:
-            canvas.reset()
+            gesture_start_time = None
+            active_mode = None
 
     output = canvas.merge_with_frame(frame)
 
-    cv2.putText(output, "Pinça para desenhar | C: limpar | Q: sair",
-                (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                0.7, (255, 255, 255), 2)
+    cv2.putText(
+        output,
+        "Indicador = desenhar | Medio = borracha | C: limpar | Q: sair",
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 255),
+        2
+    )
 
-    cv2.imshow("Air Drawing", output)
+    cv2.imshow("Voxel Air Drawing", output)
 
     key = cv2.waitKey(1)
     if key == ord('q'):
